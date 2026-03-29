@@ -435,7 +435,7 @@ def fetch_inegi(series_id):
     """
     url = (
         f"https://www.inegi.org.mx/app/api/indicadores/desarrolladores/jsonxml"
-        f"/INDICATOR/{series_id}/es/00/false/BIE/2.0/{INEGI_API_KEY}?type=json"
+        f"/INDICATOR/{series_id}/es/0700/false/BIE/2.0/{INEGI_API_KEY}?type=json"
     )
     r = requests.get(url, timeout=30)
     r.raise_for_status()
