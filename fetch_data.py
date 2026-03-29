@@ -18,8 +18,12 @@ DATA_DIR      = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # ─── FRED (EE.UU.) ────────────────────────────────────────────────────────────
-FRED_API_KEY  = "0fd385a768cca11d2a1ff2a1e0765443"
+FRED_API_KEY  = os.environ.get("FRED_API_KEY", "0fd385a768cca11d2a1ff2a1e0765443")
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
+
+# ─── INEGI + Banxico (México) ─────────────────────────────────────────────────
+INEGI_API_KEY   = os.environ.get("INEGI_API_KEY", "")
+BANXICO_API_KEY = os.environ.get("BANXICO_API_KEY", "")
 
 US_INDICATORS = {
     "CPILFESL":        {"name": "Core CPI",                   "mom": True,  "yoy": True},
@@ -38,7 +42,7 @@ US_INDICATORS = {
 # ─── BCB (Brasil) ─────────────────────────────────────────────────────────────
 BCB_BASE_URL  = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados"
 
-# ─── LATAM — FRED (Chile, Colombia, México) ───────────────────────────────────
+# ─── LATAM — FRED (Chile, Colombia) ──────────────────────────────────────────
 LATAM_COUNTRIES = [
     {
         "code": "cl", "name": "Chile", "flag": "🇨🇱",
@@ -57,15 +61,6 @@ LATAM_COUNTRIES = [
         "unrate":  None,                        # No disponible en FRED → hardcodeado vía CO_HARDCODED
         "activity": None,
         "fx_fred": None,                        # DEXCOUS no existe → hardcodeado
-    },
-    {
-        "code": "mx", "name": "México", "flag": "🇲🇽",
-        "cpi_yoy": "CPALTT01MXM659N",          # CPI YoY % (OECD 659N = same period prev. year)
-        "cpi_mom": "CPALTT01MXM657N",          # CPI MoM % (OECD 657N = previous period)
-        "rate":    "IRSTCI01MXM156N",           # Overnight interbank (proxy política Banxico)
-        "unrate":  "LRHUTTTTMXM156S",           # Desempleo armonizado OECD
-        "activity": None,
-        "fx_fred": "DEXMXUS",                   # MXN/USD daily → resample monthly
     },
 ]
 
@@ -434,6 +429,63 @@ def fetch_ar_unrate_indec():
     return df
 
 
+def fetch_inegi(series_id):
+    """Descarga una serie del Banco de Indicadores INEGI (BIE).
+    Retorna DataFrame con columnas date (YYYY-MM-01) y value (float).
+    """
+    url = (
+        f"https://www.inegi.org.mx/app/api/indicadores/desarrolladores/jsonxml"
+        f"/INDICATOR/{series_id}/es/00/false/BIE/2.0/{INEGI_API_KEY}?type=json"
+    )
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    observations = r.json()["Series"][0]["OBSERVATIONS"]
+    records = []
+    for obs in observations:
+        raw_val = obs.get("OBS_VALUE")
+        if raw_val is None:
+            continue
+        try:
+            val = float(raw_val)
+        except (ValueError, TypeError):
+            continue
+        records.append({"date": obs["TIME_PERIOD"] + "-01", "value": val})
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.dropna(subset=["value"]).sort_values("date").reset_index(drop=True)
+    df = df[df["date"] >= pd.to_datetime(START_DATE)].reset_index(drop=True)
+    return df
+
+
+def fetch_banxico(series_id):
+    """Descarga una serie diaria de la SIE API de Banxico.
+    Retorna DataFrame con columnas date y value (float), ignorando registros 'N/E'.
+    """
+    url = (
+        f"https://www.banxico.org.mx/SieAPIRest/service/v1"
+        f"/series/{series_id}/datos/{START_DATE}/{END_DATE}"
+    )
+    headers = {"Bmx-Token": BANXICO_API_KEY, "Accept": "application/json"}
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+    datos = r.json()["bmx"]["series"][0]["datos"]
+    records = []
+    for d in datos:
+        if d["dato"] in ("N/E", "", None):
+            continue
+        try:
+            val = float(d["dato"])
+        except (ValueError, TypeError):
+            continue
+        records.append({
+            "date": pd.to_datetime(d["fecha"], dayfirst=True),
+            "value": val,
+        })
+    df = pd.DataFrame(records)
+    df = df.dropna(subset=["value"]).sort_values("date").reset_index(drop=True)
+    return df
+
+
 def fetch_ar_dolar():
     """Descarga tipos de cambio desde dolarapi.com."""
     r = requests.get("https://dolarapi.com/v1/dolares", timeout=10)
@@ -632,6 +684,78 @@ def main():
         pd.DataFrame(latam_summary).to_csv(os.path.join(DATA_DIR, f"{code}_summary.csv"), index=False)
         ok_c = sum(1 for r in latam_summary if r["rows"] > 0)
         print(f"\n  ✓ {country['name']}: {ok_c}/{len(latam_summary)} series OK — guardado en data/{code}_summary.csv\n")
+
+    # ── México (INEGI + Banxico) ──────────────────────────────────────────────
+    print("=" * 55)
+    print("  🇲🇽  MÉXICO — INEGI + Banxico SIE")
+    print("=" * 55)
+    mx_summary = []
+
+    # mx_cpi — INPC serie 910392 → calcular MoM% y YoY% desde el índice
+    try:
+        print("  [mx_cpi] INPC (INEGI 910392)...", end=" ", flush=True)
+        df_inpc = fetch_inegi("910392")
+        df_inpc["mom_pct"] = df_inpc["value"].pct_change(periods=1) * 100
+        df_inpc["yoy_pct"] = df_inpc["value"].pct_change(periods=12) * 100
+        # Guardar: value = índice INPC, mom_pct, yoy_pct
+        df_mx_cpi = df_inpc.copy()
+        df_mx_cpi.to_csv(os.path.join(DATA_DIR, "mx_cpi.csv"), index=False)
+        row = make_summary_row("mx_cpi", "INPC — México (INEGI)", df_mx_cpi, source="INEGI")
+        mx_summary.append(row)
+        print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+    except Exception as e:
+        print(f"ERROR: {e}")
+        mx_summary.append(empty_summary_row("mx_cpi", "INPC — México (INEGI)", source="INEGI"))
+
+    # mx_rate — Tasa objetivo Banxico SF61745 → resamplear mensual (último del mes)
+    try:
+        print("  [mx_rate] Tasa objetivo (Banxico SF61745)...", end=" ", flush=True)
+        df_rate = fetch_banxico("SF61745")
+        df_mx_rate = (
+            df_rate.set_index("date")
+            .resample("MS").last()
+            .reset_index()
+        )
+        df_mx_rate.to_csv(os.path.join(DATA_DIR, "mx_rate.csv"), index=False)
+        row = make_summary_row("mx_rate", "Tasa Objetivo — Banxico", df_mx_rate, source="Banxico")
+        mx_summary.append(row)
+        print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+    except Exception as e:
+        print(f"ERROR: {e}")
+        mx_summary.append(empty_summary_row("mx_rate", "Tasa Objetivo — Banxico", source="Banxico"))
+
+    # mx_unrate — Desempleo ENOE (INEGI 444612)
+    try:
+        print("  [mx_unrate] Desempleo ENOE (INEGI 444612)...", end=" ", flush=True)
+        df_mx_unrate = fetch_inegi("444612")
+        df_mx_unrate.to_csv(os.path.join(DATA_DIR, "mx_unrate.csv"), index=False)
+        row = make_summary_row("mx_unrate", "Desempleo ENOE — México (INEGI)", df_mx_unrate, source="INEGI")
+        mx_summary.append(row)
+        print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+    except Exception as e:
+        print(f"ERROR: {e}")
+        mx_summary.append(empty_summary_row("mx_unrate", "Desempleo ENOE — México (INEGI)", source="INEGI"))
+
+    # mx_usd — FIX MXN/USD Banxico SF43718 → resamplear mensual (último del mes)
+    try:
+        print("  [mx_usd] FIX MXN/USD (Banxico SF43718)...", end=" ", flush=True)
+        df_fix = fetch_banxico("SF43718")
+        df_mx_usd = (
+            df_fix.set_index("date")
+            .resample("ME").last()
+            .reset_index()
+        )
+        df_mx_usd.to_csv(os.path.join(DATA_DIR, "mx_usd.csv"), index=False)
+        row = make_summary_row("mx_usd", "Tipo de Cambio FIX — México (Banxico)", df_mx_usd, source="Banxico")
+        mx_summary.append(row)
+        print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+    except Exception as e:
+        print(f"ERROR: {e}")
+        mx_summary.append(empty_summary_row("mx_usd", "Tipo de Cambio FIX — México (Banxico)", source="Banxico"))
+
+    pd.DataFrame(mx_summary).to_csv(os.path.join(DATA_DIR, "mx_summary.csv"), index=False)
+    ok_mx = sum(1 for r in mx_summary if r["rows"] > 0)
+    print(f"\n  ✓ México: {ok_mx}/{len(mx_summary)} series OK — guardado en data/mx_summary.csv\n")
 
     # ── Argentina (INDEC API + fallback hardcoded) ────────────────────────────
     print("=" * 55)

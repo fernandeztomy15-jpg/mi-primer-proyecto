@@ -37,6 +37,8 @@ jobs:
       - name: Fetch data
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          INEGI_API_KEY: ${{ secrets.INEGI_API_KEY }}
+          BANXICO_API_KEY: ${{ secrets.BANXICO_API_KEY }}
         run: python fetch_data.py
 
       - name: Generate dashboard
