@@ -1,0 +1,5 @@
+series_id,name,last_date,last_value,mom_pct,yoy_pct,rows,source
+co_cpi,CPI YoY/MoM — DANE Colombia,2025-02-01,5.08,0.62,,62,DANE (estimado)
+co_rate,Tasa política — Colombia,2026-01-01,9.01,,,73,FRED
+co_unrate,Desempleo — DANE Colombia (%),2025-02-01,10.4,,,62,DANE (estimado)
+co_usd,Tipo de Cambio — Colombia (COP/USD),2025-02-01,4358.0,,,62,hardcoded

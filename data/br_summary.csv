@@ -1,0 +1,12 @@
+series_id,name,last_date,last_value,mom_pct,yoy_pct,rows,source
+br_ipca,IPCA Monthly Change (%),2026-02-01,0.7,,,74,BCB
+br_icc,Consumer Confidence (ICC),2026-01-01,127.39,,,73,BCB
+br_retail,Retail Sales,2026-01-01,105.63,-18.5268,2.8129,73,BCB
+br_ipp,Producer Price Index (IPP),2026-02-01,0.47,6.8182,-14.5455,74,BCB
+br_gdp,GDP Real Index (QoQ via MoM),2025-10-01,194.92,0.1439,8.1087,24,BCB
+br_indpro,Industrial Production,2026-01-01,95.1,1.278,0.1053,73,BCB
+br_selic,Selic Rate (%),2026-03-01,14.9,,,75,BCB
+br_ipca_core,Core IPCA Monthly Change (%),2026-02-01,1.06,,,74,BCB
+br_caged,Formal Employment Stock (CAGED),2026-01-01,48577979.0,0.2318,2.5945,73,BCB
+br_unrate,Unemployment Rate (PNAD),2026-01-01,5.4,,,73,BCB
+br_usdbrl,BRL/USD Exchange Rate,,,,,0,BCB

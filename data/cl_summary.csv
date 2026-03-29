@@ -1,0 +1,6 @@
+series_id,name,last_date,last_value,mom_pct,yoy_pct,rows,source
+cl_cpi,CPI YoY/MoM — Chile,2023-12-01,3.9374,-0.534,,48,FRED/OECD
+cl_rate,Tasa política — Chile,2025-12-01,4.64,,,72,FRED
+cl_unrate,Desempleo — Chile,2025-11-01,8.4508,,,71,FRED
+cl_gdp,PIB (índice trimestral),2025-07-01,-0.1497,-135.1137,-11.1387,23,FRED
+cl_usd,Tipo de Cambio — Chile (vs USD),2026-03-31,6.8965,,,75,FRED

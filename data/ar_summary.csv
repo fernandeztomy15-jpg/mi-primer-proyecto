@@ -1,0 +1,6 @@
+series_id,name,last_date,last_value,mom_pct,yoy_pct,rows,source
+ar_cpi,CPI (INDEC) — IPC Nacional Base Dic 2016,2026-02-01,10714.6255,2.8963,33.0515,74,INDEC API
+ar_emae,EMAE (2004=100) — INDEC,2025-12-01,153.7354,3.9618,3.4786,72,INDEC API
+ar_unrate,Desempleo EPH — INDEC,2025-07-01,6.6,,,23,INDEC API
+ar_rate,Tasa BCRA — Política Monetaria (% anual),2025-02-01,29.0,,,62,BCRA (hardcoded)
+ar_dolar,Tipo de Cambio — Oficial vs Blue (ARS/USD),2026-03-16,1415.0,,,1,dolarapi.com

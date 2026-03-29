@@ -1,0 +1,5 @@
+series_id,name,last_date,last_value,mom_pct,yoy_pct,rows,source
+mx_cpi,CPI YoY/MoM — México,2024-03-01,4.4209,0.2873,,51,FRED/OECD
+mx_rate,Tasa política — México,2026-01-01,5.63,,,73,FRED
+mx_unrate,Desempleo — México,2025-12-01,2.5811,,,72,FRED
+mx_usd,Tipo de Cambio — México (vs USD),2026-03-31,17.798,,,75,FRED
