@@ -430,12 +430,12 @@ def fetch_ar_unrate_indec():
 
 
 def fetch_inegi(series_id):
-    """Descarga una serie del Banco de Indicadores INEGI (BIE).
+    """Descarga una serie del Banco de Indicadores INEGI (BISE).
     Retorna DataFrame con columnas date (YYYY-MM-01) y value (float).
     """
     url = (
         f"https://www.inegi.org.mx/app/api/indicadores/desarrolladores/jsonxml"
-        f"/INDICATOR/{series_id}/es/0700/false/BIE/2.0/{INEGI_API_KEY}?type=json"
+        f"/INDICATOR/{series_id}/es/00/false/BIE-BISE/2.0/{INEGI_API_KEY}?type=json"
     )
     r = requests.get(url, timeout=30)
     r.raise_for_status()
