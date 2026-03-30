@@ -84,8 +84,10 @@ CPI_INDICATOR_IDS = {
     "br_ipca", "br_ipca_core",
     "CPILFESL", "PCEPILFE", "PPIACO",
 }
-# For these, `value` column IS already the MoM%; all others store the index level
+# value column IS already the MoM% (will derive YoY via cumulative product)
 CPI_VALUE_IS_MOM = {"br_ipca", "br_ipca_core"}
+# value column IS already the YoY% (just alias it; mom_pct already in CSV)
+CPI_VALUE_IS_YOY = {"mx_cpi", "cl_cpi", "co_cpi"}
 
 # ─── Color direction (US + BR + LATAM combined) ───────────────────────────────
 COLOR_DIRECTION = {
@@ -174,18 +176,7 @@ def build_chart(ind: dict) -> go.Figure:
 
     # ── CPI indicators: show only YoY% and MoM%, no level ──
     if ind["id"] in CPI_INDICATOR_IDS:
-        df = df.copy()
-        if ind["id"] in CPI_VALUE_IS_MOM:
-            # value column IS the MoM %; derive mom_pct and compute YoY via cumulative product
-            if "mom_pct" not in df.columns:
-                df["mom_pct"] = df["value"]
-            if "yoy_pct" not in df.columns:
-                cum_idx = (1 + df["mom_pct"] / 100).cumprod()
-                df["yoy_pct"] = (cum_idx / cum_idx.shift(12) - 1) * 100
-        else:
-            # value column is the index level; compute YoY from it if missing
-            if "yoy_pct" not in df.columns:
-                df["yoy_pct"] = (df["value"] / df["value"].shift(12) - 1) * 100
+        df = _compute_cpi_columns(df, ind["id"])
 
         fig = go.Figure()
         if "yoy_pct" in df.columns:
@@ -341,6 +332,28 @@ def build_summary_table(summary_df: pd.DataFrame, prev_values: dict) -> str:
     return rows_html
 
 
+def _compute_cpi_columns(df: pd.DataFrame, series_id: str) -> pd.DataFrame:
+    """Ensure yoy_pct and mom_pct exist for CPI series.
+
+    Three cases:
+    - CPI_VALUE_IS_YOY  (mx/cl/co_cpi):      value IS YoY%; mom_pct already in CSV
+    - CPI_VALUE_IS_MOM  (br_ipca/core):       value IS MoM%; derive YoY via cumulative product
+    - others (CPILFESL/PCEPILFE/PPIACO/ar):   value is index level; yoy_pct already in CSV
+    """
+    df = df.copy()
+    if series_id in CPI_VALUE_IS_YOY:
+        if "yoy_pct" not in df.columns:
+            df["yoy_pct"] = df["value"]
+    elif series_id in CPI_VALUE_IS_MOM:
+        if "mom_pct" not in df.columns:
+            df["mom_pct"] = df["value"]
+        if "yoy_pct" not in df.columns:
+            cum_idx = (1 + df["mom_pct"] / 100).cumprod()
+            df["yoy_pct"] = (cum_idx / cum_idx.shift(12) - 1) * 100
+    # else: index-level series already have yoy_pct from fetch_data
+    return df
+
+
 def build_country_data(indicators):
     """Genera charts_json, all_dates y all_data para un conjunto de indicadores."""
     charts_json = {}
@@ -352,6 +365,8 @@ def build_country_data(indicators):
         resample = ind.get("resample")
         df = load_csv(ind["id"], resample_freq=resample)
         if df is not None and not df.empty:
+            if ind["id"] in CPI_INDICATOR_IDS:
+                df = _compute_cpi_columns(df, ind["id"])
             all_dates[ind["id"]] = df["date"].dt.strftime("%Y-%m-%d").tolist()
             all_data[ind["id"]]  = {
                 "value":   df["value"].tolist(),
@@ -464,6 +479,7 @@ def generate_dashboard():
     co_inds_json = json.dumps([_ind_js(i) for i in CO_INDICATORS])
     mx_inds_json = json.dumps([_ind_js(i) for i in MX_INDICATORS])
     ar_inds_json = json.dumps([_ind_js(i) for i in AR_INDICATORS])
+    cpi_ids_json = json.dumps(sorted(CPI_INDICATOR_IDS))
 
     # Combinar datos para JS
     all_charts_js = json.dumps({"us": us_charts_json, "br": br_charts_json, "cl": cl_charts_json, "co": co_charts_json, "mx": mx_charts_json, "ar": ar_charts_json})
@@ -949,6 +965,7 @@ const ALL_CHARTS = {all_charts_js};
 const ALL_DATES  = {all_dates_js};
 const ALL_DATA   = {all_data_js};
 const ALL_INDS   = {{ us: {us_inds_json}, br: {br_inds_json}, cl: {cl_inds_json}, co: {co_inds_json}, mx: {mx_inds_json}, ar: {ar_inds_json} }};
+const CPI_IDS    = new Set({cpi_ids_json});
 
 // ── Reference lines (US only) ─────────────────────────────────────────────────
 const REFERENCE_LINES = {{
@@ -1059,6 +1076,36 @@ function renderChart(ind) {{
     mom_pct: rawData.mom_pct || [],
     yoy_pct: rawData.yoy_pct || [],
   }});
+
+  // ── CPI indicators: single panel, YoY% + MoM% only, no level trace ──
+  if (CPI_IDS.has(ind.id)) {{
+    const cpiTraces = [];
+    const hasYoy = arrays.yoy_pct && arrays.yoy_pct.some(v => v !== null && !isNaN(v));
+    const hasMom = arrays.mom_pct && arrays.mom_pct.some(v => v !== null && !isNaN(v));
+    if (hasYoy) {{
+      cpiTraces.push({{ x: dates, y: arrays.yoy_pct, type: "scatter", mode: "lines", name: "YoY %",
+        line: {{ color: "#DA291C", width: 1.8 }},
+        hovertemplate: "<b>%{{x}}</b><br>YoY: %{{y:+.4f}}%<extra></extra>" }});
+    }}
+    if (hasMom) {{
+      cpiTraces.push({{ x: dates, y: arrays.mom_pct, type: "scatter", mode: "lines", name: "MoM %",
+        line: {{ color: "#3498DB", width: 1.5, dash: "dot" }},
+        hovertemplate: "<b>%{{x}}</b><br>MoM: %{{y:+.4f}}%<extra></extra>" }});
+    }}
+    const cpiLayout = {{ ...BASE_LAYOUT,
+      yaxis: {{ ...BASE_LAYOUT.yaxis, tickformat: ".4f", ticksuffix: "%" }},
+      shapes: [{{ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 0, y1: 0,
+                  line: {{ color: "#CCCCCC", width: 1 }} }}],
+    }};
+    const src = ind.source || "";
+    if (src) {{
+      cpiLayout.annotations = [{{ xref:"paper", yref:"paper", x:1, y:-0.08,
+        text:"Fuente: " + src, showarrow:false, xanchor:"right",
+        font:{{size:9, color:"#AAAAAA", family:"Inter, Arial"}} }}];
+    }}
+    Plotly.react(el, cpiTraces, cpiLayout, PLOTLY_CONFIG);
+    return;
+  }}
 
   const isPct  = ind.val_fmt === "pct";
   const levelFmt    = isPct ? ".2f"  : ",.2f";
