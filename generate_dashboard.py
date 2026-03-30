@@ -78,6 +78,13 @@ AR_INDICATORS = [
     {"id": "ar_dolar",  "name": "Tipo de Cambio",     "subtitle": "Oficial vs Blue (ARS/USD)",                    "unit": "ARS/USD", "mom": False, "yoy": False, "val_fmt": "large","source": "dolarapi.com"},
 ]
 
+# ─── CPI indicators: show only YoY% and MoM%, no level ──────────────────────
+CPI_INDICATOR_IDS = {
+    "mx_cpi", "cl_cpi", "co_cpi", "ar_cpi",
+    "br_ipca", "br_ipca_core",
+    "CPILFESL", "PCEPILFE", "PPIACO",
+}
+
 # ─── Color direction (US + BR + LATAM combined) ───────────────────────────────
 COLOR_DIRECTION = {
     # US
@@ -161,6 +168,40 @@ def build_chart(ind: dict) -> go.Figure:
         fig.add_annotation(text="Sin datos", x=0.5, y=0.5,
                            xref="paper", yref="paper",
                            font=dict(color=COLOR_NEG, size=18), showarrow=False)
+        return fig
+
+    # ── CPI indicators: show only YoY% and MoM%, no level ──
+    if ind["id"] in CPI_INDICATOR_IDS:
+        fig = go.Figure()
+        has_yoy_col = "yoy_pct" in df.columns
+        has_mom_col = "mom_pct" in df.columns
+        if has_yoy_col:
+            fig.add_trace(go.Scatter(
+                x=df["date"], y=df["yoy_pct"], name="YoY %",
+                line=dict(color=LINE_YOY, width=1.8),
+                hovertemplate="<b>%{x|%b %Y}</b><br>YoY: %{y:+.4f}%<extra></extra>",
+            ))
+        if has_mom_col:
+            fig.add_trace(go.Scatter(
+                x=df["date"], y=df["mom_pct"], name="MoM %",
+                line=dict(color=LINE_MOM, width=1.5, dash="dot"),
+                hovertemplate="<b>%{x|%b %Y}</b><br>MoM: %{y:+.4f}%<extra></extra>",
+            ))
+        if has_yoy_col or has_mom_col:
+            fig.add_hline(y=0, line_color="#CCCCCC", line_width=1)
+        _ax = dict(showgrid=True, gridcolor=GRID_COLOR, gridwidth=1,
+                   zeroline=False, tickfont=dict(color="#888888", size=10),
+                   linecolor="#E0E0E0")
+        fig.update_xaxes(**_ax)
+        fig.update_yaxes(**_ax, tickformat=".4f", ticksuffix="%")
+        fig.update_layout(
+            paper_bgcolor=PAPER_BG, plot_bgcolor=BG_COLOR,
+            font=dict(family="Inter, Arial, sans-serif", color=TEXT_COLOR, size=11),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                        bgcolor="rgba(245,245,245,0.8)", font=dict(size=10, color="#555555")),
+            margin=dict(l=50, r=20, t=30, b=40),
+            hovermode="x unified", dragmode="zoom",
+        )
         return fig
 
     has_mom = ind["mom"] and "mom_pct" in df.columns
