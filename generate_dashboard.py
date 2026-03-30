@@ -84,6 +84,8 @@ CPI_INDICATOR_IDS = {
     "br_ipca", "br_ipca_core",
     "CPILFESL", "PCEPILFE", "PPIACO",
 }
+# For these, `value` column IS already the MoM%; all others store the index level
+CPI_VALUE_IS_MOM = {"br_ipca", "br_ipca_core"}
 
 # ─── Color direction (US + BR + LATAM combined) ───────────────────────────────
 COLOR_DIRECTION = {
@@ -172,22 +174,35 @@ def build_chart(ind: dict) -> go.Figure:
 
     # ── CPI indicators: show only YoY% and MoM%, no level ──
     if ind["id"] in CPI_INDICATOR_IDS:
+        df = df.copy()
+        if ind["id"] in CPI_VALUE_IS_MOM:
+            # value column IS the MoM %; derive mom_pct and compute YoY via cumulative product
+            if "mom_pct" not in df.columns:
+                df["mom_pct"] = df["value"]
+            if "yoy_pct" not in df.columns:
+                cum_idx = (1 + df["mom_pct"] / 100).cumprod()
+                df["yoy_pct"] = (cum_idx / cum_idx.shift(12) - 1) * 100
+        else:
+            # value column is the index level; compute YoY from it if missing
+            if "yoy_pct" not in df.columns:
+                df["yoy_pct"] = (df["value"] / df["value"].shift(12) - 1) * 100
+
         fig = go.Figure()
-        has_yoy_col = "yoy_pct" in df.columns
-        has_mom_col = "mom_pct" in df.columns
-        if has_yoy_col:
+        if "yoy_pct" in df.columns:
+            yoy_s = df[["date", "yoy_pct"]].dropna()
             fig.add_trace(go.Scatter(
-                x=df["date"], y=df["yoy_pct"], name="YoY %",
+                x=yoy_s["date"], y=yoy_s["yoy_pct"], name="YoY %",
                 line=dict(color=LINE_YOY, width=1.8),
                 hovertemplate="<b>%{x|%b %Y}</b><br>YoY: %{y:+.4f}%<extra></extra>",
             ))
-        if has_mom_col:
+        if "mom_pct" in df.columns:
+            mom_s = df[["date", "mom_pct"]].dropna()
             fig.add_trace(go.Scatter(
-                x=df["date"], y=df["mom_pct"], name="MoM %",
+                x=mom_s["date"], y=mom_s["mom_pct"], name="MoM %",
                 line=dict(color=LINE_MOM, width=1.5, dash="dot"),
                 hovertemplate="<b>%{x|%b %Y}</b><br>MoM: %{y:+.4f}%<extra></extra>",
             ))
-        if has_yoy_col or has_mom_col:
+        if fig.data:
             fig.add_hline(y=0, line_color="#CCCCCC", line_width=1)
         _ax = dict(showgrid=True, gridcolor=GRID_COLOR, gridwidth=1,
                    zeroline=False, tickfont=dict(color="#888888", size=10),
