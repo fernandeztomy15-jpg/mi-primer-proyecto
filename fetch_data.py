@@ -527,12 +527,52 @@ def fetch_banxico(series_id):
     return df
 
 
+def fetch_ar_cpi_argentinadatos():
+    """Descarga CPI MoM% desde api.argentinadatos.com y calcula YoY% por producto acumulado."""
+    url = "https://api.argentinadatos.com/v1/finanzas/indices/inflacion"
+    r = requests.get(url, timeout=20)
+    r.raise_for_status()
+    data = r.json()
+    if not data:
+        raise ValueError("Sin datos de argentinadatos inflacion")
+    df = pd.DataFrame(data).rename(columns={"fecha": "date", "valor": "value"})
+    df["date"] = pd.to_datetime(df["date"]).dt.to_period("M").dt.to_timestamp()
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["value"]).sort_values("date").reset_index(drop=True)
+    df = df[df["date"] >= pd.to_datetime("2017-01-01")].reset_index(drop=True)
+    df["mom_pct"] = df["value"]
+    # YoY compuesto: ratio del cumprod contra 12 meses atrás
+    cumprod = (1 + df["value"] / 100).cumprod()
+    df["yoy_pct"] = (cumprod / cumprod.shift(12) - 1) * 100
+    return df
+
+
+def fetch_ar_dolar_argentinadatos():
+    """Descarga histórico de cotizaciones dólar desde api.argentinadatos.com.
+    Retorna serie mensual con value=oficial_venta, blue_rate=blue_venta.
+    """
+    url = "https://api.argentinadatos.com/v1/cotizaciones/dolares"
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    if not data:
+        raise ValueError("Sin datos de argentinadatos dolares")
+    df = pd.DataFrame(data)
+    df["fecha"] = pd.to_datetime(df["fecha"])
+    df["venta"] = pd.to_numeric(df["venta"], errors="coerce")
+    oficial = df[df["casa"] == "oficial"].set_index("fecha")["venta"].rename("value")
+    blue    = df[df["casa"] == "blue"].set_index("fecha")["venta"].rename("blue_rate")
+    merged = pd.concat([oficial, blue], axis=1).sort_index()
+    merged = merged.resample("ME").last().reset_index().rename(columns={"fecha": "date"})
+    merged = merged[merged["date"] >= pd.to_datetime("2017-01-01")].reset_index(drop=True)
+    return merged.dropna(subset=["value"]).reset_index(drop=True)
+
+
 def fetch_ar_dolar():
-    """Descarga tipos de cambio desde dolarapi.com."""
+    """Descarga tipos de cambio spot desde dolarapi.com (solo valor actual)."""
     r = requests.get("https://dolarapi.com/v1/dolares", timeout=10)
     r.raise_for_status()
-    dolares = r.json()
-    return dolares
+    return r.json()
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -804,29 +844,36 @@ def main():
     print("=" * 55)
     ar_summary = []
 
-    # CPI desde INDEC API
-    print(f"  [ar_cpi] CPI INDEC API...", end=" ", flush=True)
-    ar_cpi_source = "INDEC API"
+    # CPI: argentinadatos.com (primario) → INDEC API → hardcoded fallback
+    print(f"  [ar_cpi] CPI (argentinadatos.com)...", end=" ", flush=True)
+    ar_cpi_source = "argentinadatos.com"
     try:
-        df_ar_cpi = fetch_ar_cpi_indec()
+        df_ar_cpi = fetch_ar_cpi_argentinadatos()
         df_ar_cpi.to_csv(os.path.join(DATA_DIR, "ar_cpi.csv"), index=False)
-        row = make_summary_row("ar_cpi", "CPI (INDEC) — IPC Nacional Base Dic 2016", df_ar_cpi, source=ar_cpi_source)
+        row = make_summary_row("ar_cpi", "CPI MoM% — INDEC vía argentinadatos", df_ar_cpi, source=ar_cpi_source)
         ar_summary.append(row)
         print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
     except Exception as e:
-        print(f"ERROR: {e} — usando fallback hardcoded")
-        ar_cpi_source = "INDEC (hardcoded)"
-        fb = AR_HARDCODED["ar_cpi_mom_fallback"]
-        df_fb = pd.DataFrame(fb["data"], columns=["date", "value"])
-        df_fb["date"] = pd.to_datetime(df_fb["date"])
-        # Build a mock "level" by cumulative product from MoM values
-        # Store as is: value = MoM%, yoy_pct = annualized estimate
-        df_fb["yoy_pct"] = df_fb["value"].rolling(12).sum()
-        df_fb.rename(columns={"value": "value"}, inplace=True)
-        # Keep value as MoM for chart compatibility
-        df_fb.to_csv(os.path.join(DATA_DIR, "ar_cpi.csv"), index=False)
-        row = make_summary_row("ar_cpi", "CPI (INDEC) — fallback hardcoded", df_fb, source=ar_cpi_source)
-        ar_summary.append(row)
+        print(f"ERROR: {e} — intentando INDEC API")
+        ar_cpi_source = "INDEC API"
+        try:
+            df_ar_cpi = fetch_ar_cpi_indec()
+            df_ar_cpi.to_csv(os.path.join(DATA_DIR, "ar_cpi.csv"), index=False)
+            row = make_summary_row("ar_cpi", "CPI (INDEC) — IPC Nacional Base Dic 2016", df_ar_cpi, source=ar_cpi_source)
+            ar_summary.append(row)
+            print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+        except Exception as e2:
+            print(f"ERROR: {e2} — usando fallback hardcoded")
+            ar_cpi_source = "INDEC (hardcoded)"
+            fb = AR_HARDCODED["ar_cpi_mom_fallback"]
+            df_fb = pd.DataFrame(fb["data"], columns=["date", "value"])
+            df_fb["date"] = pd.to_datetime(df_fb["date"])
+            df_fb["mom_pct"] = df_fb["value"]
+            cumprod = (1 + df_fb["value"] / 100).cumprod()
+            df_fb["yoy_pct"] = (cumprod / cumprod.shift(12) - 1) * 100
+            df_fb.to_csv(os.path.join(DATA_DIR, "ar_cpi.csv"), index=False)
+            row = make_summary_row("ar_cpi", "CPI (INDEC) — fallback hardcoded", df_fb, source=ar_cpi_source)
+            ar_summary.append(row)
 
     # EMAE desde INDEC API
     print(f"  [ar_emae] EMAE INDEC API...", end=" ", flush=True)
@@ -873,41 +920,45 @@ def main():
     ar_summary.append(row)
     print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
 
-    # Dólar Blue (dolarapi.com)
-    print(f"  [ar_dolar] Dólar Blue (dolarapi.com)...", end=" ", flush=True)
+    # Dólar: argentinadatos.com histórico (primario) → dolarapi.com spot (fallback)
+    print(f"  [ar_dolar] Dólar histórico (argentinadatos.com)...", end=" ", flush=True)
     try:
-        dolares = fetch_ar_dolar()
-        # Guardar JSON completo
-        with open(os.path.join(DATA_DIR, "ar_dolar.json"), "w", encoding="utf-8") as f:
-            json.dump(dolares, f, ensure_ascii=False, indent=2)
-        # Extraer oficial y blue para el CSV
-        oficial_val = None
-        blue_val = None
-        for d in dolares:
-            casa = d.get("casa", "").lower()
-            if casa == "oficial":
-                oficial_val = d.get("venta")
-            elif casa == "blue":
-                blue_val = d.get("venta")
-        today_str = datetime.today().strftime("%Y-%m-%d")
-        df_dolar = pd.DataFrame([{
-            "date": today_str,
-            "value": oficial_val if oficial_val is not None else 0,
-            "blue_rate": blue_val if blue_val is not None else 0,
-        }])
-        df_dolar["date"] = pd.to_datetime(df_dolar["date"])
+        df_dolar = fetch_ar_dolar_argentinadatos()
         df_dolar.to_csv(os.path.join(DATA_DIR, "ar_dolar.csv"), index=False)
-        row = make_summary_row("ar_dolar", "Tipo de Cambio — Oficial vs Blue (ARS/USD)", df_dolar, source="dolarapi.com")
+        row = make_summary_row("ar_dolar", "Tipo de Cambio Oficial/Blue — ARS/USD", df_dolar, source="argentinadatos.com")
         ar_summary.append(row)
-        print(f"OK — Oficial: {oficial_val}, Blue: {blue_val}")
+        print(f"OK ({row['rows']} filas, último oficial: {row['last_value']} al {row['last_date']})")
     except Exception as e:
-        print(f"ERROR: {e} (no crítico)")
-        # Create empty placeholder CSV so dashboard doesn't break
-        today_str = datetime.today().strftime("%Y-%m-%d")
-        df_dolar_empty = pd.DataFrame([{"date": today_str, "value": 0, "blue_rate": 0}])
-        df_dolar_empty["date"] = pd.to_datetime(df_dolar_empty["date"])
-        df_dolar_empty.to_csv(os.path.join(DATA_DIR, "ar_dolar.csv"), index=False)
-        ar_summary.append(empty_summary_row("ar_dolar", "Tipo de Cambio (dolarapi — error)", source="dolarapi.com"))
+        print(f"ERROR: {e} — usando dolarapi.com (solo spot)")
+        try:
+            dolares = fetch_ar_dolar()
+            with open(os.path.join(DATA_DIR, "ar_dolar.json"), "w", encoding="utf-8") as f:
+                json.dump(dolares, f, ensure_ascii=False, indent=2)
+            oficial_val, blue_val = None, None
+            for d in dolares:
+                casa = d.get("casa", "").lower()
+                if casa == "oficial":
+                    oficial_val = d.get("venta")
+                elif casa == "blue":
+                    blue_val = d.get("venta")
+            today_str = datetime.today().strftime("%Y-%m-%d")
+            df_dolar = pd.DataFrame([{
+                "date": today_str,
+                "value": oficial_val if oficial_val is not None else 0,
+                "blue_rate": blue_val if blue_val is not None else 0,
+            }])
+            df_dolar["date"] = pd.to_datetime(df_dolar["date"])
+            df_dolar.to_csv(os.path.join(DATA_DIR, "ar_dolar.csv"), index=False)
+            row = make_summary_row("ar_dolar", "Tipo de Cambio — Oficial vs Blue (spot)", df_dolar, source="dolarapi.com")
+            ar_summary.append(row)
+            print(f"OK (spot) — Oficial: {oficial_val}, Blue: {blue_val}")
+        except Exception as e2:
+            print(f"ERROR: {e2} (no crítico)")
+            today_str = datetime.today().strftime("%Y-%m-%d")
+            df_dolar_empty = pd.DataFrame([{"date": today_str, "value": 0, "blue_rate": 0}])
+            df_dolar_empty["date"] = pd.to_datetime(df_dolar_empty["date"])
+            df_dolar_empty.to_csv(os.path.join(DATA_DIR, "ar_dolar.csv"), index=False)
+            ar_summary.append(empty_summary_row("ar_dolar", "Tipo de Cambio (error)", source="argentinadatos.com"))
 
     pd.DataFrame(ar_summary).to_csv(os.path.join(DATA_DIR, "ar_summary.csv"), index=False)
     ok_ar = sum(1 for r in ar_summary if r.get("rows", 0) > 0)
