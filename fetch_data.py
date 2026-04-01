@@ -458,6 +458,47 @@ def fetch_ar_emae_csv():
     return df
 
 
+def fetch_cl_cpi_bis():
+    """Descarga CPI Chile desde BIS API (WS_LONG_CPI).
+    UNIT_MEASURE=628: índice nivel base → calcula MoM%
+    UNIT_MEASURE=771: YoY% directo
+    Retorna columnas: date, value (YoY%), mom_pct, yoy_pct
+    """
+    from io import StringIO
+    url = (
+        "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_LONG_CPI/1.0/M.CL."
+        "?startPeriod=2016-01&format=csv"
+    )
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    df_raw = pd.read_csv(StringIO(r.text))
+    df_idx = (
+        df_raw[df_raw["UNIT_MEASURE"] == 628][["TIME_PERIOD", "OBS_VALUE"]]
+        .copy()
+        .rename(columns={"TIME_PERIOD": "date", "OBS_VALUE": "idx"})
+    )
+    df_yoy = (
+        df_raw[df_raw["UNIT_MEASURE"] == 771][["TIME_PERIOD", "OBS_VALUE"]]
+        .copy()
+        .rename(columns={"TIME_PERIOD": "date", "OBS_VALUE": "yoy_pct"})
+    )
+    if df_idx.empty or df_yoy.empty:
+        raise ValueError("BIS CPI Chile: unidades 628/771 no encontradas en la respuesta")
+    df_idx["date"] = pd.to_datetime(df_idx["date"])
+    df_idx["idx"] = pd.to_numeric(df_idx["idx"], errors="coerce")
+    df_yoy["date"] = pd.to_datetime(df_yoy["date"])
+    df_yoy["yoy_pct"] = pd.to_numeric(df_yoy["yoy_pct"], errors="coerce")
+    df_idx = df_idx.sort_values("date").reset_index(drop=True)
+    df_idx["mom_pct"] = df_idx["idx"].pct_change(1) * 100
+    df = pd.merge(df_idx[["date", "mom_pct"]], df_yoy, on="date", how="inner")
+    df["value"] = df["yoy_pct"]
+    df = df[["date", "value", "mom_pct", "yoy_pct"]].dropna(subset=["value"])
+    df = df[df["date"] >= pd.to_datetime(START_DATE)].reset_index(drop=True)
+    if df.empty:
+        raise ValueError("Sin datos BIS CPI Chile tras filtrar por fecha")
+    return df
+
+
 def fetch_ar_unrate_indec():
     """Descarga desempleo trimestral desde INDEC API."""
     url = ("https://apis.datos.gob.ar/series/api/series/"
@@ -658,7 +699,33 @@ def main():
         # CPI: combina YoY (valor) + MoM (mom_pct) en un solo CSV
         file_key = f"{code}_cpi"
         cpi_source = "FRED/OECD" if code in ("cl", "mx") else "DANE (estimado)"
-        if country["cpi_yoy"] is not None:
+        if code == "cl":
+            # Chile: BIS API primero (último dato ~1 mes), FRED/OECD como fallback (850d rezago)
+            try:
+                print(f"  [{file_key}] CPI Chile (BIS API)...", end=" ", flush=True)
+                df_cl_cpi = fetch_cl_cpi_bis()
+                df_cl_cpi.to_csv(os.path.join(DATA_DIR, f"{file_key}.csv"), index=False)
+                row = make_summary_row(file_key, "CPI YoY/MoM — Chile (BIS)", df_cl_cpi, source="BIS")
+                latam_summary.append(row)
+                print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+            except Exception as e:
+                print(f"ERROR BIS: {e} — fallback FRED/OECD...", end=" ", flush=True)
+                try:
+                    yoy_df = fetch_fred(country["cpi_yoy"])
+                    mom_df = fetch_fred(country["cpi_mom"])
+                    merged = pd.merge(
+                        yoy_df[["date", "value"]],
+                        mom_df[["date", "value"]].rename(columns={"value": "mom_pct"}),
+                        on="date", how="inner"
+                    ).sort_values("date").reset_index(drop=True)
+                    merged.to_csv(os.path.join(DATA_DIR, f"{file_key}.csv"), index=False)
+                    row = make_summary_row(file_key, "CPI YoY/MoM — Chile (FRED fallback)", merged, source="FRED/OECD")
+                    latam_summary.append(row)
+                    print(f"OK fallback ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+                except Exception as e2:
+                    print(f"ERROR: {e2}")
+                    latam_summary.append(empty_summary_row(file_key, "CPI YoY/MoM — Chile", source="BIS/FRED"))
+        elif country["cpi_yoy"] is not None:
             try:
                 print(f"  [{file_key}] CPI YoY/MoM (FRED)...", end=" ", flush=True)
                 yoy_df = fetch_fred(country["cpi_yoy"])
