@@ -431,24 +431,30 @@ def fetch_ar_cpi_indec():
     return df
 
 
-def fetch_ar_emae_indec():
-    """Descarga EMAE mensual desde INDEC API."""
-    url = ("https://apis.datos.gob.ar/series/api/series/"
-           "?ids=143.3_NO_PR_2004_A_21&limit=200&sort=asc"
-           "&start_date=2018-01-01&format=json")
-    r = requests.get(url, timeout=20)
+def fetch_ar_emae_csv():
+    """Descarga EMAE mensual desde CSV directo de infra.datos.gob.ar."""
+    url = (
+        "https://infra.datos.gob.ar/catalog/sspm/dataset/143/distribution/"
+        "143.3/download/emae-valores-anuales-indice-base-2004-mensual.csv"
+    )
+    r = requests.get(url, timeout=30)
     r.raise_for_status()
-    data = r.json()
-    records = data.get("data", [])
-    if not records:
-        raise ValueError("Sin datos de INDEC EMAE")
-    df = pd.DataFrame(records, columns=["date", "value"])
+    from io import StringIO
+    df = pd.read_csv(StringIO(r.text))
+    # columnas: indice_tiempo, emae_original, emae_desestacionalizada, ...
+    if "indice_tiempo" not in df.columns or "emae_original" not in df.columns:
+        raise ValueError(f"Columnas inesperadas en CSV EMAE: {list(df.columns)}")
+    df = df[["indice_tiempo", "emae_original"]].rename(
+        columns={"indice_tiempo": "date", "emae_original": "value"}
+    )
     df["date"] = pd.to_datetime(df["date"])
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     df = df.dropna(subset=["value"]).sort_values("date").reset_index(drop=True)
+    df = df[df["date"] >= pd.to_datetime("2017-01-01")].reset_index(drop=True)
     df["mom_pct"] = df["value"].pct_change(1) * 100
     df["yoy_pct"] = df["value"].pct_change(12) * 100
-    df = df[df["date"] >= pd.to_datetime(START_DATE)].reset_index(drop=True)
+    if df.empty:
+        raise ValueError("Sin datos de EMAE tras filtrar por fecha")
     return df
 
 
@@ -875,12 +881,12 @@ def main():
             row = make_summary_row("ar_cpi", "CPI (INDEC) — fallback hardcoded", df_fb, source=ar_cpi_source)
             ar_summary.append(row)
 
-    # EMAE desde INDEC API
-    print(f"  [ar_emae] EMAE INDEC API...", end=" ", flush=True)
+    # EMAE desde CSV directo infra.datos.gob.ar
+    print(f"  [ar_emae] EMAE CSV infra.datos.gob.ar...", end=" ", flush=True)
     try:
-        df_ar_emae = fetch_ar_emae_indec()
+        df_ar_emae = fetch_ar_emae_csv()
         df_ar_emae.to_csv(os.path.join(DATA_DIR, "ar_emae.csv"), index=False)
-        row = make_summary_row("ar_emae", "EMAE (2004=100) — INDEC", df_ar_emae, source="INDEC API")
+        row = make_summary_row("ar_emae", "EMAE (2004=100) — infra.datos.gob.ar", df_ar_emae, source="infra.datos.gob.ar")
         ar_summary.append(row)
         print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
     except Exception as e:
