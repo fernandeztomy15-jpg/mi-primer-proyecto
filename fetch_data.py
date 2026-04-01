@@ -58,18 +58,17 @@ LATAM_COUNTRIES = [
         "cpi_yoy": None,                        # No disponible en FRED → hardcodeado vía CO_HARDCODED
         "cpi_mom": None,
         "rate":    "COLIR3TIB01STM",            # 3M interbank rate Colombia
-        "unrate":  None,                        # No disponible en FRED → hardcodeado vía CO_HARDCODED
+        "unrate":  "LRUN64TTCOM156S",           # Desempleo armonizado OECD Colombia (FRED)
         "activity": None,
-        "fx_fred": None,                        # DEXCOUS no existe → hardcodeado
+        "fx_fred": "DEXCOUS",                   # COP/USD daily (FRED) → resample mensual
     },
 ]
 
-# ─── Colombia (hardcoded — DANE/BanRep, sin series FRED disponibles) ──────────
+# ─── Colombia (hardcoded — fallback cuando FRED no tiene la serie) ────────────
 # Investigación de fuentes (2026-03):
-#   CPI/Unrate: DANE no expone REST API pública; datos extraídos de boletines oficiales.
-#   COP/USD: BanRep publica TRM vía catálogo en banrep.gov.co/es/estadisticas/trm
-#            pero no tiene endpoint REST abierto sin auth. Alternativa: ECB/Yahoo Finance
-#            requieren wrapper. Por ahora se actualiza manualmente c/ datos TRM oficiales.
+#   CPI: BIS API (WS_LONG_CPI) — migrado. Hardcoded como fallback.
+#   Unrate: LRUN64TTCOM156S en FRED (OECD armonizado); hardcoded DANE como fallback.
+#   COP/USD: DEXCOUS en FRED (daily → mensual); hardcoded BanRep TRM como fallback.
 #   Tasa BanRep: disponible en FRED (COLIR3TIB01STM) → ya se usa, auto-actualiza.
 #   Nota CL: FRED/OECD (CPALTT01, IRSTCI01, LRHUTTTT, NAEXKP01, CCUSMA02CLM618N) cubren
 #            todo Chile sin necesidad de migrar a BCCh API.
@@ -142,7 +141,7 @@ CO_HARDCODED = {
     },
 }
 
-# ─── Colombia — COP/USD hardcodeado (DEXCOUS no existe en FRED) ───────────────
+# ─── Colombia — COP/USD hardcodeado (fallback si DEXCOUS falla en FRED) ──────
 CO_USD_HARDCODED = [
     ("2020-01-01", 3288), ("2020-02-01", 3377), ("2020-03-01", 3817),
     ("2020-04-01", 3900), ("2020-05-01", 3700), ("2020-06-01", 3720),
@@ -831,16 +830,18 @@ def main():
                 latam_summary.append(row)
                 print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
             except Exception as e:
-                print(f"ERROR: {e}")
-                latam_summary.append(empty_summary_row(file_key, f"Desempleo — {country['name']}", source=unrate_source))
-        elif code == "co" and "co_unrate" in CO_HARDCODED:
-            print(f"  [{file_key}] Unemployment (hardcodeado)...", end=" ", flush=True)
-            df = pd.DataFrame(CO_HARDCODED["co_unrate"]["data"], columns=["date", "value"])
-            df["date"] = pd.to_datetime(df["date"])
-            df.to_csv(os.path.join(DATA_DIR, f"{file_key}.csv"), index=False)
-            row = make_summary_row(file_key, CO_HARDCODED["co_unrate"]["name"], df, source="DANE (estimado)")
-            latam_summary.append(row)
-            print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+                print(f"ERROR FRED: {e}", end=" ", flush=True)
+                if code == "co" and "co_unrate" in CO_HARDCODED:
+                    print("— fallback hardcodeado...", end=" ", flush=True)
+                    df = pd.DataFrame(CO_HARDCODED["co_unrate"]["data"], columns=["date", "value"])
+                    df["date"] = pd.to_datetime(df["date"])
+                    df.to_csv(os.path.join(DATA_DIR, f"{file_key}.csv"), index=False)
+                    row = make_summary_row(file_key, CO_HARDCODED["co_unrate"]["name"], df, source="DANE (estimado)")
+                    latam_summary.append(row)
+                    print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+                else:
+                    print()
+                    latam_summary.append(empty_summary_row(file_key, f"Desempleo — {country['name']}", source=unrate_source))
 
         # Actividad económica (solo Chile tiene serie FRED)
         if country["activity"]:
@@ -858,9 +859,9 @@ def main():
                 print(f"ERROR: {e}")
                 latam_summary.append(empty_summary_row(file_key, act["name"], source="FRED"))
 
-        # FX rates: CL y MX desde FRED daily → resample mensual
+        # FX rates: desde FRED daily → resample mensual; fallback hardcodeado para CO
+        fx_id = f"{code}_usd"
         if country.get("fx_fred"):
-            fx_id = f"{code}_usd"
             fred_series = country["fx_fred"]
             try:
                 print(f"  [{fx_id}] FX rate {fred_series} (FRED daily → monthly)...", end=" ", flush=True)
@@ -871,12 +872,19 @@ def main():
                 latam_summary.append(row)
                 print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
             except Exception as e:
-                print(f"ERROR: {e}")
-                latam_summary.append(empty_summary_row(fx_id, f"Tipo de Cambio — {country['name']}", source="FRED"))
-
-        # COP/USD hardcodeado para Colombia
-        if code == "co":
-            fx_id = "co_usd"
+                print(f"ERROR FRED: {e}", end=" ", flush=True)
+                if code == "co":
+                    print("— fallback hardcodeado...", end=" ", flush=True)
+                    df_co_fx = pd.DataFrame(CO_USD_HARDCODED, columns=["date", "value"])
+                    df_co_fx["date"] = pd.to_datetime(df_co_fx["date"])
+                    df_co_fx.to_csv(os.path.join(DATA_DIR, f"{fx_id}.csv"), index=False)
+                    row = make_summary_row(fx_id, "Tipo de Cambio — Colombia (COP/USD)", df_co_fx, source="hardcoded")
+                    latam_summary.append(row)
+                    print(f"OK ({row['rows']} filas, último: {row['last_value']} al {row['last_date']})")
+                else:
+                    print()
+                    latam_summary.append(empty_summary_row(fx_id, f"Tipo de Cambio — {country['name']}", source="FRED"))
+        elif code == "co":
             print(f"  [{fx_id}] COP/USD (hardcodeado)...", end=" ", flush=True)
             df_co_fx = pd.DataFrame(CO_USD_HARDCODED, columns=["date", "value"])
             df_co_fx["date"] = pd.to_datetime(df_co_fx["date"])
