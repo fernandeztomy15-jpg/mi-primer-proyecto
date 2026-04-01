@@ -50,8 +50,8 @@ LATAM_COUNTRIES = [
         "cpi_mom": "CPALTT01CLM657N",          # CPI MoM % (OECD 657N = previous period)
         "rate":    "IRSTCI01CLM156N",           # Overnight interbank (proxy política BCCh)
         "unrate":  "LRHUTTTTCLM156S",           # Desempleo armonizado OECD
-        "activity": {"id": "NAEXKP01CLQ657S", "name": "PIB (índice trimestral)", "mom": True, "yoy": True},
-        "fx_fred": "DEXCHUS",                   # CLP/USD daily → resample monthly
+        "activity": {"id": "NAEXKP01CLQ657S", "name": "PIB QoQ% (OECD)", "mom": False, "yoy": False},
+        "fx_fred": "CCUSMA02CLM618N",           # CLP/USD monthly (OECD) — DEXCHUS era CNY/USD
     },
     {
         "code": "co", "name": "Colombia", "flag": "🇨🇴",
@@ -71,7 +71,7 @@ LATAM_COUNTRIES = [
 #            pero no tiene endpoint REST abierto sin auth. Alternativa: ECB/Yahoo Finance
 #            requieren wrapper. Por ahora se actualiza manualmente c/ datos TRM oficiales.
 #   Tasa BanRep: disponible en FRED (COLIR3TIB01STM) → ya se usa, auto-actualiza.
-#   Nota CL: FRED/OECD (CPALTT01, IRSTCI01, LRHUTTTT, NAEXKP01, DEXCHUS) cubren
+#   Nota CL: FRED/OECD (CPALTT01, IRSTCI01, LRHUTTTT, NAEXKP01, CCUSMA02CLM618N) cubren
 #            todo Chile sin necesidad de migrar a BCCh API.
 CO_HARDCODED = {
     "co_cpi": {
