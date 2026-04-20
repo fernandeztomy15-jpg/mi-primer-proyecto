@@ -300,9 +300,9 @@ AR_HARDCODED = {
 BR_INDICATORS = {
     "br_ipca":      {"serie": 433,   "name": "IPCA Monthly Change (%)",         "mom": False, "yoy": False, "raw_rate": True},
     "br_icc":       {"serie": 4393,  "name": "Consumer Confidence (ICC)",       "mom": False, "yoy": False, "raw_rate": False},
-    "br_retail":    {"serie": 1455,  "name": "Retail Sales",                    "mom": True,  "yoy": True,  "raw_rate": False},
+    "br_retail":    {"serie": 1455,  "name": "Retail Sales",                    "mom": False, "yoy": True,  "raw_rate": False},
     "br_ipp":       {"serie": 11426, "name": "Producer Price Index (IPP)",      "mom": True,  "yoy": True,  "raw_rate": False},
-    "br_gdp":       {"serie": 22109, "name": "GDP Real Index (QoQ via MoM)",    "mom": True,  "yoy": True,  "raw_rate": False},
+    "br_gdp":       {"serie": 22109, "name": "GDP Real Index (trimestral)",      "mom": True,  "yoy": True,  "raw_rate": False, "yoy_periods": 4},
     "br_indpro":    {"serie": 21859, "name": "Industrial Production",           "mom": True,  "yoy": True,  "raw_rate": False},
     "br_selic":     {"serie": 4189,  "name": "Selic Rate (%)",                  "mom": False, "yoy": False, "raw_rate": True},
     "br_ipca_core": {"serie": 11427, "name": "Core IPCA Monthly Change (%)",   "mom": False, "yoy": False, "raw_rate": True},
@@ -314,12 +314,12 @@ BR_INDICATORS = {
 
 # ─── Helpers comunes ──────────────────────────────────────────────────────────
 
-def add_changes(df: pd.DataFrame, mom: bool, yoy: bool) -> pd.DataFrame:
+def add_changes(df: pd.DataFrame, mom: bool, yoy: bool, yoy_periods: int = 12) -> pd.DataFrame:
     """Agrega columnas MoM y/o YoY al DataFrame."""
     if mom:
         df["mom_pct"] = df["value"].pct_change(periods=1) * 100
     if yoy:
-        df["yoy_pct"] = df["value"].pct_change(periods=12) * 100
+        df["yoy_pct"] = df["value"].pct_change(periods=yoy_periods) * 100
     return df
 
 
@@ -716,7 +716,7 @@ def main():
         try:
             print(f"  [{file_key} / serie {meta['serie']}] {meta['name']}...", end=" ", flush=True)
             df = fetch_bcb(meta["serie"])
-            df = add_changes(df, meta["mom"], meta["yoy"])
+            df = add_changes(df, meta["mom"], meta["yoy"], meta.get("yoy_periods", 12))
             df.to_csv(os.path.join(DATA_DIR, f"{file_key}.csv"), index=False)
             row = make_summary_row(file_key, meta["name"], df, source="BCB")
             br_summary.append(row)

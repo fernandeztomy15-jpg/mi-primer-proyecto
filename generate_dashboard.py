@@ -33,7 +33,7 @@ US_INDICATORS = [
 BR_INDICATORS = [
     {"id": "br_ipca",      "name": "IPCA Monthly Change",       "subtitle": "BCB 433 — Variação mensal (%)",                        "unit": "%",       "mom": False, "yoy": False, "val_fmt": "pct",   "source": "BCB"},
     {"id": "br_icc",       "name": "Consumer Confidence (ICC)", "subtitle": "BCB 4393 — Índice de Confiança do Consumidor",         "unit": "Index",   "mom": False, "yoy": False, "val_fmt": "num",   "source": "BCB"},
-    {"id": "br_retail",    "name": "Retail Sales",              "subtitle": "BCB 1455 — Pesquisa Mensal de Comércio (2022=100)",    "unit": "Index",   "mom": True,  "yoy": True,  "val_fmt": "num",   "source": "BCB"},
+    {"id": "br_retail",    "name": "Retail Sales",              "subtitle": "BCB 1455 — Pesquisa Mensal de Comércio (2022=100)",    "unit": "Index",   "mom": False, "yoy": True,  "val_fmt": "num",   "source": "BCB"},
     {"id": "br_ipp",       "name": "Producer Price Index (IPP)","subtitle": "BCB 11426 — IPP variação mensal (%)",                  "unit": "%",       "mom": True,  "yoy": True,  "val_fmt": "pct",   "source": "BCB"},
     {"id": "br_gdp",       "name": "GDP Real Index",            "subtitle": "BCB 22109 — Índice encadeado real (1995=100)",         "unit": "Index",   "mom": True,  "yoy": True,  "val_fmt": "num",   "source": "BCB"},
     {"id": "br_indpro",    "name": "Industrial Production",     "subtitle": "BCB 21859 — Produção Industrial (2012=100)",           "unit": "Index",   "mom": True,  "yoy": True,  "val_fmt": "num",   "source": "BCB"},
