@@ -63,7 +63,7 @@ CO_INDICATORS = [
 
 # ─── MX Indicators ────────────────────────────────────────────────────────────
 MX_INDICATORS = [
-    {"id": "mx_cpi",    "name": "CPI (INPC)",   "subtitle": "INEGI — INPC General Base 2da Quincena Jul 2018 = 100",        "unit": "% YoY",  "mom": True,  "yoy": False, "val_fmt": "pct",   "source": "INEGI"},
+    {"id": "mx_cpi",    "name": "CPI (INPC)",   "subtitle": "INEGI — INPC General Base 2da Quincena Jul 2018 = 100",        "unit": "Índice", "mom": True,  "yoy": False, "val_fmt": "num",   "source": "INEGI"},
     {"id": "mx_rate",   "name": "Tasa Banxico", "subtitle": "Banxico SIE SF61745 — Tasa objetivo de política monetaria",    "unit": "%",       "mom": False, "yoy": False, "val_fmt": "pct",   "source": "Banxico"},
     {"id": "mx_unrate", "name": "Desempleo",    "subtitle": "INEGI ENOE 444612 — Tasa de desocupación (%)",                 "unit": "%",       "mom": False, "yoy": False, "val_fmt": "pct",   "source": "INEGI"},
     {"id": "mx_usd",    "name": "MXN/USD",      "subtitle": "Banxico SIE SF43718 — Tipo de cambio FIX (MXN/USD)",           "unit": "MXN/USD", "mom": False, "yoy": False, "val_fmt": "num",   "source": "Banxico"},

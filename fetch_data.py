@@ -651,7 +651,8 @@ def fetch_ar_dolar_argentinadatos():
     blue    = df[df["casa"] == "blue"].set_index("fecha")["venta"].rename("blue_rate")
     merged = pd.concat([oficial, blue], axis=1).sort_index()
     merged = merged.resample("ME").last().reset_index().rename(columns={"fecha": "date"})
-    merged = merged[merged["date"] >= pd.to_datetime("2017-01-01")].reset_index(drop=True)
+    today = pd.Timestamp.today().normalize()
+    merged = merged[(merged["date"] >= pd.to_datetime("2017-01-01")) & (merged["date"] <= today)].reset_index(drop=True)
     return merged.dropna(subset=["value"]).reset_index(drop=True)
 
 
@@ -957,6 +958,7 @@ def main():
             .resample("ME").last()
             .reset_index()
         )
+        df_mx_usd = df_mx_usd[df_mx_usd["date"] <= pd.Timestamp.today().normalize()]
         df_mx_usd.to_csv(os.path.join(DATA_DIR, "mx_usd.csv"), index=False)
         row = make_summary_row("mx_usd", "Tipo de Cambio FIX — México (Banxico)", df_mx_usd, source="Banxico")
         mx_summary.append(row)
